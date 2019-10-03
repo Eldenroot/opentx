@@ -26,7 +26,7 @@
 
 #define UPDATE_MULTI_EXT_BIN ".bin"
 
-//#define DEBUG_EXT_MODULE_FLASH
+#define DEBUG_EXT_MODULE_FLASH
 
 class MultiFirmwareUpdateDriver
 {
@@ -39,6 +39,7 @@ class MultiFirmwareUpdateDriver
     virtual bool getByte(uint8_t& byte) const = 0;
     virtual void sendByte(uint8_t byte) const = 0;
     virtual void clear() const = 0;
+    virtual void deinit() const {}
 
   private:
     bool getRxByte(uint8_t& byte) const;
@@ -47,6 +48,7 @@ class MultiFirmwareUpdateDriver
     const char * getDeviceSignature(uint8_t* signature) const;
     const char * loadAddress(uint32_t offset) const;
     const char * progPage(uint8_t* buffer, uint16_t size) const;
+    void leaveProgMode() const;
 };
 
 #if defined(INTERNAL_MODULE_MULTI)
@@ -122,6 +124,26 @@ class MultiExternalUpdateDriver: public MultiFirmwareUpdateDriver
 };
 
 static const MultiExternalUpdateDriver multiExternalUpdateDriver;
+
+class MultiExternalAVRUpdateDriver: public MultiExternalUpdateDriver
+{
+  public:
+    MultiExternalAVRUpdateDriver() = default;
+
+  protected:
+    void init() const override
+    {
+      EXTERNAL_MODULE_ON();
+      telemetryPortInvertedInit(57600);
+    }
+
+    void deinit() const override
+    {
+      telemetryPortInvertedInit(0);
+    }
+};
+
+static const MultiExternalAVRUpdateDriver multiExternalAVRUpdateDriver;
 
 bool MultiFirmwareUpdateDriver::getRxByte(uint8_t& byte) const
 {
@@ -214,9 +236,11 @@ const char * MultiFirmwareUpdateDriver::loadAddress(uint32_t offset) const
 const char * MultiFirmwareUpdateDriver::progPage(uint8_t* buffer, uint16_t size) const
 {
   sendByte(STK_PROG_PAGE);
-  // page size 256
-  sendByte(1);
-  sendByte(0);
+
+  // page size
+  sendByte(size >> 8);
+  sendByte(size & 0xFF);
+
   // flash/eeprom flag
   sendByte(0);
 
@@ -229,11 +253,12 @@ const char * MultiFirmwareUpdateDriver::progPage(uint8_t* buffer, uint16_t size)
   }
   sendByte(CRC_EOP);
 
+  //clear();
   if (!checkRxByte(STK_INSYNC))
     return "NoSync";
 
   uint8_t byte;
-  uint8_t retries = 4;
+  uint8_t retries = 4;//10;
   do {
     getRxByte(byte);
     wdt_reset();
@@ -243,6 +268,16 @@ const char * MultiFirmwareUpdateDriver::progPage(uint8_t* buffer, uint16_t size)
     return "NoPageSync";
 
   return nullptr;
+}
+
+void MultiFirmwareUpdateDriver::leaveProgMode() const
+{
+  sendByte(STK_LEAVE_PROGMODE);
+  sendByte(CRC_EOP);
+
+  // eat last sync byte
+  checkRxByte(STK_INSYNC);
+  deinit();
 }
 
 const char * MultiFirmwareUpdateDriver::flashFirmware(FIL* file, const char* label) const
@@ -255,24 +290,39 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL* file, const char* lab
   RTOS_WAIT_MS(500);
 
   result = waitForInitialSync();
-  if (result != nullptr)
+  if (result != nullptr) {
+    leaveProgMode();
     return result;
+  }
 
   unsigned char signature[4]; // 3 bytes signature + STK_OK
   result = getDeviceSignature(signature);
-  if (result != nullptr)
+  if (result != nullptr) {
+    leaveProgMode();
     return result;
+  }
 
-  uint8_t  buffer[256]; // page size = 256
-  uint32_t writeOffset = 0x1000; // start offset (word address)
+  uint8_t  buffer[256];
+  uint16_t pageSize = 128;  
+  uint32_t writeOffset = 0;
+
+  if (signature[0] != 0x1E) {
+    leaveProgMode();
+    return "Wrong signature";
+  }
+
+  if ((signature[1] == 0x55) && (signature[2] == 0xAA)) {
+    pageSize = 256;
+    writeOffset = 0x1000; // start offset (word address)
+  }
 
   while (!f_eof(file)) {
 
     drawProgressScreen(label, STR_WRITING, file->fptr, file->obj.objsize);
 
     UINT count=0;
-    memclear(buffer, 256);
-    if (f_read(file, buffer, 256, &count) != FR_OK) {
+    memclear(buffer, pageSize);
+    if (f_read(file, buffer, pageSize, &count) != FR_OK) {
       result = "Error reading file";
       break;
     }
@@ -287,24 +337,19 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL* file, const char* lab
       break;
     }
 
-    result = progPage(buffer, 256);
+    result = progPage(buffer, pageSize);
     if (result != nullptr) {
       break;
     }
 
-    writeOffset += 128; // page / 2
+    writeOffset += pageSize/2; // page / 2
   }
 
   if (f_eof(file)) {
     drawProgressScreen(label, STR_WRITING, file->fptr, file->obj.objsize);
   }
 
-  sendByte(STK_LEAVE_PROGMODE);
-  sendByte(CRC_EOP);
-
-  // eat last sync byte
-  checkRxByte(STK_INSYNC);
-
+  leaveProgMode();
   return result;
 }
 
@@ -370,10 +415,21 @@ const char * multiFlashFirmware(uint8_t moduleIdx, const char * filename)
   FIL file;
   const char * result = nullptr;
 
-  const char * ext = getFileExtension(filename);
-  if (ext && strcasecmp(ext, UPDATE_MULTI_EXT_BIN)) {
-    return "Wrong file extension";
+  MultiFirmwareInformation information;
+  result = information.readMultiFirmwareInformation(filename);
+  if (result != nullptr) {
+    return result;
   }
+
+  const MultiFirmwareUpdateDriver* driver = &multiExternalUpdateDriver;
+  if (moduleIdx == EXTERNAL_MODULE
+      && (information.isMultiAvrFirmware() || information.isMultiOrxFirmware())) {
+    driver = &multiExternalAVRUpdateDriver;
+  }
+#if defined(INTERNAL_MODULE_MULTI)
+  else if (moduleIdx == INTERNAL_MODULE)
+    driver = &multiInternalUpdateDriver;
+#endif
 
   if (f_open(&file, filename, FA_READ) != FR_OK) {
     return "Error opening file";
@@ -396,13 +452,6 @@ const char * multiFlashFirmware(uint8_t moduleIdx, const char * filename)
   /* wait 2s off */
   watchdogSuspend(2000);
   RTOS_WAIT_MS(2000);
-
-  // TODO: real update here
-  const MultiFirmwareUpdateDriver* driver = &multiExternalUpdateDriver;
-#if defined(INTERNAL_MODULE_MULTI)
-  if (moduleIdx == INTERNAL_MODULE)
-    driver = &multiInternalUpdateDriver;
-#endif
 
   result = driver->flashFirmware(&file, getBasename(filename));
   f_close(&file);
