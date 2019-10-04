@@ -195,7 +195,7 @@ static void processMultiSyncPacket(const uint8_t * data, uint8_t module)
 #endif
 }
 
-static void processMultiRxChannels(const uint8_t * data)
+static void processMultiRxChannels(const uint8_t * data, uint8_t len)
 {
   if (g_model.trainerData.mode != TRAINER_MODE_MULTI)
     return;
@@ -211,12 +211,12 @@ static void processMultiRxChannels(const uint8_t * data)
 
   while(ch < maxCh) {
 
-    while((bitsavailable < MULTI_CHAN_BITS) && byteIdx < 26) {
+    while((bitsavailable < MULTI_CHAN_BITS) && byteIdx < len) {
       bits |= (uint32_t)(data[byteIdx++]) << (uint32_t)bitsavailable;
       bitsavailable += 8;
     }
 
-    if (byteIdx >= 26) {
+    if (byteIdx >= len) {
       // overflow
       break;
     }
@@ -316,10 +316,10 @@ static void processMultiTelemetryPaket(const uint8_t * packet, uint8_t module)
 #endif
 
     case MultiRxChannels:
-      if (len >= 26)
-        processMultiRxChannels(data);
+      if (len >= 4)
+        processMultiRxChannels(data, len);
       else
-        TRACE("[MP] Received RX channels len %d < 26", len);
+        TRACE("[MP] Received RX channels len %d < 4", len);
       break;
       
     default:
