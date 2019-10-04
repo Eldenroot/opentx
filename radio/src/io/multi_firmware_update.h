@@ -36,15 +36,15 @@
 class MultiFirmwareInformation {
   public:
     enum MultiFirmwareBoardType {
+      FIRMWARE_MULTI_AVR = 0,
       FIRMWARE_MULTI_STM,
-      FIRMWARE_MULTI_AVR,
       FIRMWARE_MULTI_ORX,
     };
 
     enum MultiFirmwareTelemetryType {
-      FIRMWARE_MULTI_TELEM_MULTI,
-      FIRMWARE_MULTI_TELEM_STATUS,
-      FIRMWARE_MULTI_TELEM_NONE,
+      FIRMWARE_MULTI_TELEM_NONE = 0,
+      FIRMWARE_MULTI_TELEM_STATUS, // erSkyTX
+      FIRMWARE_MULTI_TELEM_MULTI,  // OpenTX
     };
 
     bool isMultiStmFirmware() const
@@ -89,6 +89,9 @@ class MultiFirmwareInformation {
     uint8_t firmwareVersionMinor;
     uint8_t firmwareVersionRevision;
     uint8_t firmwareVersionSubRevision;
+
+    const char * readV1Signature(const char * buffer);
+    const char * readV2Signature(const char * buffer);
 };
 
 const char* multiFlashFirmware(uint8_t module, const char * filename);

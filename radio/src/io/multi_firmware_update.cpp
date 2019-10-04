@@ -361,19 +361,9 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL* file, const char* lab
 #define MULTI_SIGN_TELEM_INVERSION_OFFSET           13
 #define MULTI_SIGN_VERSION_OFFSET                   15
 
-const char * MultiFirmwareInformation::readMultiFirmwareInformation(const char * filename)
+const char * MultiFirmwareInformation::readV1Signature(const char * buffer)
 {
-  FIL file;
-  f_open(&file, filename, FA_READ);
-  char buffer[MULTI_SIGN_SIZE];
-  UINT count;
-
-  f_lseek(&file, f_size(&file) - MULTI_SIGN_SIZE);
-  if (f_read(&file, buffer, MULTI_SIGN_SIZE, &count) != FR_OK || count != MULTI_SIGN_SIZE) {
-    return "Error reading file";
-  }
-
-  if(!memcmp(buffer, "multi-stm", 9))
+  if (!memcmp(buffer, "multi-stm", 9))
     boardType = FIRMWARE_MULTI_STM;
   else if (!memcmp(buffer, "multi-avr", 9))
     boardType = FIRMWARE_MULTI_AVR;
@@ -405,6 +395,60 @@ const char * MultiFirmwareInformation::readMultiFirmwareInformation(const char *
     telemetryInversion = false;
 
   return nullptr;
+}
+
+const char * MultiFirmwareInformation::readV2Signature(const char * buffer)
+{
+  // new format
+  uint32_t options = 0;
+  const char * beg = buffer + 7;
+  const char * cursor = beg;
+
+  while (cursor - beg < 8) {
+    options <<= 4;
+    if (*cursor >= '0' && *cursor <= '9')
+      options |= *cursor - '0';
+    else if (*cursor >= 'a' && *cursor <= 'f')
+      options |= *cursor - 'a' + 10;
+    else if (*cursor >= 'A' && *cursor <= 'F')
+      options |= *cursor - 'A' + 10;
+    else
+      break; // should be '-'
+    cursor++;
+  }
+
+  if (cursor - beg < 8)
+    return "Invalid signature";
+
+  boardType = options & 0x3;
+  optibootSupport = options & 0x80;
+
+  telemetryType = FIRMWARE_MULTI_TELEM_NONE;
+  if (options & 0x400)
+    telemetryType = FIRMWARE_MULTI_TELEM_STATUS;
+  if (options & 0x800)
+    telemetryType = FIRMWARE_MULTI_TELEM_MULTI;
+
+  return nullptr;
+}
+
+const char * MultiFirmwareInformation::readMultiFirmwareInformation(const char * filename)
+{
+  FIL file;
+  f_open(&file, filename, FA_READ);
+  char buffer[MULTI_SIGN_SIZE];
+  UINT count;
+
+  f_lseek(&file, f_size(&file) - MULTI_SIGN_SIZE);
+  if (f_read(&file, buffer, MULTI_SIGN_SIZE, &count) != FR_OK || count != MULTI_SIGN_SIZE) {
+    return "Error reading file";
+  }
+
+  if (!memcmp(buffer, "multi-x", 7)) {
+    return readV2Signature(buffer);
+  }
+  
+  return readV1Signature(buffer);
 }
 
 
