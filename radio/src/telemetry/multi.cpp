@@ -220,7 +220,7 @@ static void processMultiRxChannels(const uint8_t * data, uint8_t len)
     bitsavailable -= MULTI_CHAN_BITS;
     bits >>= MULTI_CHAN_BITS;
 
-    ppmInput[ch] = (value - 1024) * 500 / 820;
+    ppmInput[ch] = (value - 1024) * 500 / 800;
     ch++;
 
     if (byteIdx >= len)
