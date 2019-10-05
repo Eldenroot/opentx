@@ -79,16 +79,21 @@ class MultiInternalUpdateDriver: public MultiFirmwareUpdateDriver
     {
       intmoduleFifo.clear();
     }
+
+    void deinit() const override
+    {
+      clear();
+    }
 };
 
 static const MultiInternalUpdateDriver multiInternalUpdateDriver;
 
 #endif
 
-class MultiExternalUpdateDriver: public MultiFirmwareUpdateDriver
+class MultiExternalSoftSerialUpdateDriver: public MultiFirmwareUpdateDriver
 {
   public:
-    MultiExternalUpdateDriver() = default;
+    MultiExternalSoftSerialUpdateDriver() = default;
 
   protected:
     void init() const override
@@ -104,7 +109,7 @@ class MultiExternalUpdateDriver: public MultiFirmwareUpdateDriver
 #endif
 
       EXTERNAL_MODULE_ON();
-      telemetryPortInit(57600, TELEMETRY_SERIAL_DEFAULT);
+      telemetryPortInvertedInit(57600);
     }
 
     bool getByte(uint8_t& byte) const override
@@ -121,29 +126,15 @@ class MultiExternalUpdateDriver: public MultiFirmwareUpdateDriver
     {
       telemetryClearFifo();
     }
-};
-
-static const MultiExternalUpdateDriver multiExternalUpdateDriver;
-
-class MultiExternalAVRUpdateDriver: public MultiExternalUpdateDriver
-{
-  public:
-    MultiExternalAVRUpdateDriver() = default;
-
-  protected:
-    void init() const override
-    {
-      EXTERNAL_MODULE_ON();
-      telemetryPortInvertedInit(57600);
-    }
 
     void deinit() const override
     {
       telemetryPortInvertedInit(0);
+      clear();
     }
 };
 
-static const MultiExternalAVRUpdateDriver multiExternalAVRUpdateDriver;
+static const MultiExternalSoftSerialUpdateDriver multiExternalSoftSerialUpdateDriver;
 
 bool MultiFirmwareUpdateDriver::getRxByte(uint8_t& byte) const
 {
@@ -172,12 +163,11 @@ bool MultiFirmwareUpdateDriver::checkRxByte(uint8_t byte) const
 
 const char * MultiFirmwareUpdateDriver::waitForInitialSync() const
 {
-  clear();
-
   uint8_t byte;
   int retries = 1000;
   do {
     // Send sync request
+    clear();
     sendByte(STK_GET_SYNC);
     sendByte(CRC_EOP);
 
@@ -253,12 +243,11 @@ const char * MultiFirmwareUpdateDriver::progPage(uint8_t* buffer, uint16_t size)
   }
   sendByte(CRC_EOP);
 
-  //clear();
   if (!checkRxByte(STK_INSYNC))
     return "NoSync";
 
   uint8_t byte;
-  uint8_t retries = 4;//10;
+  uint8_t retries = 4;
   do {
     getRxByte(byte);
     wdt_reset();
@@ -303,7 +292,7 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL* file, const char* lab
   }
 
   uint8_t  buffer[256];
-  uint16_t pageSize = 128;  
+  uint16_t pageSize = 128;
   uint32_t writeOffset = 0;
 
   if (signature[0] != 0x1E) {
@@ -342,7 +331,7 @@ const char * MultiFirmwareUpdateDriver::flashFirmware(FIL* file, const char* lab
       break;
     }
 
-    writeOffset += pageSize/2; // page / 2
+    writeOffset += pageSize/2;
   }
 
   if (f_eof(file)) {
@@ -451,9 +440,6 @@ const char * MultiFirmwareInformation::readMultiFirmwareInformation(const char *
   return readV1Signature(buffer);
 }
 
-
-
-
 const char * multiFlashFirmware(uint8_t moduleIdx, const char * filename)
 {
   FIL file;
@@ -465,13 +451,16 @@ const char * multiFlashFirmware(uint8_t moduleIdx, const char * filename)
     return result;
   }
 
-  const MultiFirmwareUpdateDriver* driver = &multiExternalUpdateDriver;
-  if (moduleIdx == EXTERNAL_MODULE
-      && (information.isMultiAvrFirmware() || information.isMultiOrxFirmware())) {
-    driver = &multiExternalAVRUpdateDriver;
-  }
+  const MultiFirmwareUpdateDriver* driver = &multiExternalSoftSerialUpdateDriver;
+  //const MultiFirmwareUpdateDriver* driver = &multiExternalUpdateDriver;
+
+  // if (moduleIdx == EXTERNAL_MODULE
+  //     && (information.isMultiAvrFirmware() || information.isMultiOrxFirmware())) {
+  //   driver = &multiExternalAVRUpdateDriver;
+  // }
 #if defined(INTERNAL_MODULE_MULTI)
-  else if (moduleIdx == INTERNAL_MODULE)
+  //else
+  if (moduleIdx == INTERNAL_MODULE)
     driver = &multiInternalUpdateDriver;
 #endif
 
@@ -518,8 +507,10 @@ const char * multiFlashFirmware(uint8_t moduleIdx, const char * filename)
   /* wait 2s off */
   watchdogSuspend(2000);
   RTOS_WAIT_MS(2000);
-  telemetryClearFifo();
 
+  // reset telemetry protocol
+  telemetryInit(255);
+  
 #if defined(INTERNAL_MODULE_MULTI)
   if (intPwr) {
     INTERNAL_MODULE_ON();

@@ -143,6 +143,14 @@ void telemetryPortInvertedInit(uint32_t baudrate)
   if (baudrate == 0) {
     NVIC_DisableIRQ(TELEMETRY_EXTI_IRQn);
     NVIC_DisableIRQ(TELEMETRY_TIMER_IRQn);
+
+    EXTI_InitTypeDef EXTI_InitStructure;
+    EXTI_StructInit(&EXTI_InitStructure);
+    EXTI_InitStructure.EXTI_Line = TELEMETRY_EXTI_LINE;
+    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+    EXTI_InitStructure.EXTI_Trigger = TELEMETRY_EXTI_TRIGGER;
+    EXTI_InitStructure.EXTI_LineCmd = DISABLE;
+    EXTI_Init(&EXTI_InitStructure);
     return;
   }
 
