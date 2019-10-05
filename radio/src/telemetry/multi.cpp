@@ -216,17 +216,15 @@ static void processMultiRxChannels(const uint8_t * data, uint8_t len)
       bitsavailable += 8;
     }
 
-    if (byteIdx >= len) {
-      // overflow
-      break;
-    }
-
     int value = bits & ((1 << MULTI_CHAN_BITS)-1);
     bitsavailable -= MULTI_CHAN_BITS;
     bits >>= MULTI_CHAN_BITS;
 
     ppmInput[ch] = (value - 1024) * 500 / 820;
     ch++;
+
+    if (byteIdx >= len)
+      break;
   }
 
   if (ch == maxCh)
