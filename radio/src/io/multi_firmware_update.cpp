@@ -165,9 +165,10 @@ const char * MultiFirmwareUpdateDriver::waitForInitialSync() const
 {
   uint8_t byte;
   int retries = 1000;
+
+  clear();
   do {
     // Send sync request
-    clear();
     sendByte(STK_GET_SYNC);
     sendByte(CRC_EOP);
 

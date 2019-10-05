@@ -196,18 +196,21 @@ void telemetryPortInvertedInit(uint32_t baudrate)
 
 void telemetryPortInvertedRxBit()
 {
-  if (rxBitCount == 0) {
-    TELEMETRY_TIMER->ARR = 34;
-    rxByte = 0;
-  }
-  else {
-    rxByte >>= 1;
-  }
+  if (rxBitCount < 8) {
+    if (rxBitCount == 0) {
+      TELEMETRY_TIMER->ARR = 34;
+      rxByte = 0;
+    }
+    else {
+      rxByte >>= 1;
+    }
 
-  if (GPIO_ReadInputDataBit(TELEMETRY_GPIO, TELEMETRY_RX_GPIO_PIN) == Bit_RESET)
-    rxByte |= 0x80;
+    if (GPIO_ReadInputDataBit(TELEMETRY_GPIO, TELEMETRY_RX_GPIO_PIN) == Bit_RESET)
+      rxByte |= 0x80;
 
-  if (++rxBitCount >= 8) {
+    ++rxBitCount;
+  }
+  else if (rxBitCount == 8) {
 
     telemetryNoDMAFifo.push(rxByte);
     rxBitCount = 0;
