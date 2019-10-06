@@ -315,7 +315,7 @@ static void processMultiTelemetryPaket(const uint8_t * packet, uint8_t module)
       break;
 #endif
 
-#if defined(PCBSKY9X)
+#if !defined(PCBSKY9X)
     case MultiRxChannels:
       if (len >= 4)
         processMultiRxChannels(data, len);
