@@ -171,7 +171,9 @@ void drawSliders()
     coord_t x = ((i==SLIDER1 || i==SLIDER3) ? 3 : LCD_W-5);
     int8_t y = (i<SLIDER3 ? LCD_H/2+1 : 1);
 #else
+#if !defined(PCBX9D)
     if (i == POT3) continue;
+#endif
     coord_t x = ((i==POT1 || i==SLIDER1) ? 3 : LCD_W-5);
     int8_t y = (i>=SLIDER1 ? LCD_H/2+1 : 1);
 #endif
