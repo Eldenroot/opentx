@@ -159,9 +159,13 @@ const mm_protocol_definition *getMultiProtocolDefinition (uint8_t protocol);
 #define MULTIMODULE_STATUS_ROWS(moduleIdx)      isModuleMultimodule(moduleIdx) ? TITLE_ROW : HIDDEN_ROW, (isModuleMultimodule(moduleIdx) && getMultiSyncStatus(moduleIdx).isValid()) ? TITLE_ROW : HIDDEN_ROW,
 #define MULTIMODULE_MODULE_ROWS(moduleIdx)      isModuleMultimodule(moduleIdx) ? (uint8_t) 0 : HIDDEN_ROW,
 #define MULTIMODULE_MODE_ROWS(moduleIdx)        (g_model.moduleData[moduleIdx].multi.customProto) ? (uint8_t) 3 :MULTIMODULE_HAS_SUBTYPE(g_model.moduleData[moduleIdx].getMultiProtocol(true)) ? (uint8_t)2 : (uint8_t)1
-inline bool MULTIMODULE_HAS_SUBTYPE(uint8_t moduleIdx)
+inline bool MULTIMODULE_HAS_SUBTYPE(uint8_t multi_rfProto)
 {
-  return getMultiProtocolDefinition(moduleIdx)->maxSubtype > 0;
+  return getMultiProtocolDefinition(multi_rfProto)->maxSubtype > 0;
+}
+inline bool multiIsRfProtoAvail(int multi_rfProto)
+{
+  return getMultiProtocolDefinition((uint8_t)multi_rfProto)->protocol == multi_rfProto;
 }
 inline uint8_t MULTIMODULE_RFPROTO_COLUMNS(uint8_t moduleIdx)
 {
